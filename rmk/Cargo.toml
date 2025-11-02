@@ -11,7 +11,7 @@ license = "MIT OR Apache-2.0"
 resolver = "2"
 
 [dependencies]
-rmk = { default-features = false, features = ["storage", "async_matrix", "nrf52840_ble", "adafruit_bl", "usb_log"] }
+rmk = { version = "0.7", default-features = false, features = ["storage", "async_matrix", "nrf52840_ble", "adafruit_bl", "usb_log"] }
 rmk-macro = { version = "=0.6.8", path = "../rmk-macro" }
 rmk-types = { version = "=0.1.0", path = "../rmk-types" }
 embedded-hal = { version = "1.0.0" }
