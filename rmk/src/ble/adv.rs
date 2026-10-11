@@ -30,11 +30,6 @@ pub(crate) enum Adv<'a> {
 
 impl Adv<'_> {
     /// Encode into `buf`, which the returned advertisement borrows.
-    ///
-    /// `scan_rsp` is an optional pre-built SCAN_RSP payload. Under the
-    /// `status-adv` feature the connection loop supplies the Prospector
-    /// manufacturer AD there (MODE 1); otherwise it stays `None` and the
-    /// advertisement carries no scan response, as before.
     fn build<'b>(&self, buf: &'b mut [u8; 31], scan_rsp: Option<&'b [u8]>) -> Result<Advertisement<'b>, Error> {
         let adv_data: &[AdStructure] = match *self {
             Self::Directed(peer) => return Ok(Advertisement::ConnectableNonscannableDirected { peer }),
@@ -117,10 +112,6 @@ impl Adv<'_> {
 
 /// Broadcast `adv` and hand back the connection a central makes on it, or
 /// [`Error::Timeout`] if none does within `timeout`.
-///
-/// `scan_rsp` (MODE 1 status advertisement) is forwarded into the built
-/// advertisement; the data is copied into the controller during this call,
-/// so the caller's buffer only needs to live for the call.
 pub(crate) async fn advertise<'a, 'b, C: Controller, const ATT: usize, const CONN: usize>(
     peripheral: &mut Peripheral<'a, C, DefaultPacketPool>,
     server: &'b AttributeServer<'_, NoopRawMutex, DefaultPacketPool, ATT, CONN>,
@@ -140,6 +131,8 @@ pub(crate) async fn advertise<'a, 'b, C: Controller, const ATT: usize, const CON
 
 #[cfg(test)]
 mod tests {
+    use rmk_types::ble::BLE_ADV_NAME_MAX_LEN;
+
     use super::Adv;
 
     /// Overrunning the 31-byte legacy advertisement only fails at runtime.
@@ -151,10 +144,10 @@ mod tests {
     fn every_advertisement_fits_the_legacy_budget() {
         assert!(fits(Adv::SplitPeripheral { id: 0xFF }));
         assert!(fits(Adv::DongleSeeking));
-        // Flags, UUIDs and appearance leave 16 bytes for the name.
-        assert!(fits(Adv::Host {
-            name: "0123456789abcdef"
-        }));
+        // Where BLE_ADV_NAME_MAX_LEN comes from: this name fills the budget exactly.
+        const LONGEST_NAME: &str = "0123456789abcdef";
+        assert_eq!(LONGEST_NAME.len(), BLE_ADV_NAME_MAX_LEN);
+        assert!(fits(Adv::Host { name: LONGEST_NAME }));
         assert!(!fits(Adv::Host {
             name: "0123456789abcdefg"
         }));
