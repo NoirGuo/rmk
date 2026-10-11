@@ -110,7 +110,7 @@ pub fn set_payload(payload: Option<&[u8; PAYLOAD_LEN]>, burst: bool) {
         Some(p) => {
             PAYLOAD.lock(|slot| slot.set(*p));
             PIGGYBACK_SD.lock(|sd| {
-                let mut buf = *sd;
+                let mut buf = sd.get();
                 buf[0] = (PAYLOAD_LEN + 1) as u8; // len = type(1) + data(26)
                 buf[1] = 0xFF; // manufacturer specific data
                 buf[2..].copy_from_slice(p);
@@ -220,10 +220,10 @@ fn current_payload() -> Option<[u8; PAYLOAD_LEN]> {
 /// 启动（或保持）MODE 2 广播：non-connectable + scannable，
 /// ADV = Flags + manufacturer 载荷，SCAN_RSP = 设备名。
 async fn start_mode2_broadcast<'a, C>(
-    peripheral: &'a mut Peripheral<'a, C, DefaultPacketPool>,
+    peripheral: &mut Peripheral<'a, C, DefaultPacketPool>,
     payload: &[u8; PAYLOAD_LEN],
     product_name: &str,
-    advertiser: &'a mut Option<Advertiser<'a, C, DefaultPacketPool>>,
+    advertiser: &mut Option<Advertiser<'a, C, DefaultPacketPool>>,
 ) where
     C: Controller
         + for<'t> ControllerCmdSync<LeSetAdvData>
