@@ -21,7 +21,7 @@ use core::cell::Cell;
 use bt_hci::cmd::le::{LeSetAdvData, LeSetAdvParams, LeSetAdvEnable, LeSetScanResponseData};
 use bt_hci::controller::ControllerCmdSync;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_sync::blocking_mutex::BlockingMutex;
+use embassy_sync::blocking_mutex::Mutex as BlockingMutex;
 use embassy_time::{Duration, Instant, Timer};
 use trouble_host::prelude::*;
 
@@ -219,11 +219,11 @@ fn current_payload() -> Option<[u8; PAYLOAD_LEN]> {
 
 /// 启动（或保持）MODE 2 广播：non-connectable + scannable，
 /// ADV = Flags + manufacturer 载荷，SCAN_RSP = 设备名。
-async fn start_mode2_broadcast<C>(
-    peripheral: &mut Peripheral<'_, C, DefaultPacketPool>,
+async fn start_mode2_broadcast<'a, C>(
+    peripheral: &'a mut Peripheral<'a, C, DefaultPacketPool>,
     payload: &[u8; PAYLOAD_LEN],
     product_name: &str,
-    advertiser: &mut Option<Advertiser<'_, C, DefaultPacketPool>>,
+    advertiser: &'a mut Option<Advertiser<'a, C, DefaultPacketPool>>,
 ) where
     C: Controller
         + for<'t> ControllerCmdSync<LeSetAdvData>
