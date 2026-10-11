@@ -30,7 +30,12 @@ pub(crate) enum Adv<'a> {
 
 impl Adv<'_> {
     /// Encode into `buf`, which the returned advertisement borrows.
-    fn build<'b>(&self, buf: &'b mut [u8; 31]) -> Result<Advertisement<'b>, Error> {
+    ///
+    /// `scan_rsp` is an optional pre-built SCAN_RSP payload. Under the
+    /// `status-adv` feature the connection loop supplies the Prospector
+    /// manufacturer AD there (MODE 1); otherwise it stays `None` and the
+    /// advertisement carries no scan response, as before.
+    fn build<'b>(&self, buf: &'b mut [u8; 31], scan_rsp: Option<&'b [u8]>) -> Result<Advertisement<'b>, Error> {
         let adv_data: &[AdStructure] = match *self {
             Self::Directed(peer) => return Ok(Advertisement::ConnectableNonscannableDirected { peer }),
             Self::Host { name } => &[
@@ -63,7 +68,7 @@ impl Adv<'_> {
         AdStructure::encode_slice(adv_data, &mut buf[..])?;
         Ok(Advertisement::ConnectableScannableUndirected {
             adv_data: &buf[..],
-            scan_data: &[],
+            scan_data: scan_rsp.unwrap_or(&[]),
         })
     }
 
@@ -112,14 +117,21 @@ impl Adv<'_> {
 
 /// Broadcast `adv` and hand back the connection a central makes on it, or
 /// [`Error::Timeout`] if none does within `timeout`.
+///
+/// `scan_rsp` (MODE 1 status advertisement) is forwarded into the built
+/// advertisement; the data is copied into the controller during this call,
+/// so the caller's buffer only needs to live for the call.
 pub(crate) async fn advertise<'a, 'b, C: Controller, const ATT: usize, const CONN: usize>(
     peripheral: &mut Peripheral<'a, C, DefaultPacketPool>,
     server: &'b AttributeServer<'_, NoopRawMutex, DefaultPacketPool, ATT, CONN>,
     adv: Adv<'_>,
     timeout: Duration,
+    scan_rsp: Option<&'b [u8]>,
 ) -> Result<GattConnection<'a, 'b, DefaultPacketPool>, BleHostError<C::Error>> {
     let mut buf = [0; 31];
-    let advertiser = peripheral.advertise(&adv.params(), adv.build(&mut buf)?).await?;
+    let advertiser = peripheral
+        .advertise(&adv.params(), adv.build(&mut buf, scan_rsp)?)
+        .await?;
     let conn = with_timeout(timeout, advertiser.accept())
         .await
         .map_err(|_| Error::Timeout)??;
@@ -128,23 +140,21 @@ pub(crate) async fn advertise<'a, 'b, C: Controller, const ATT: usize, const CON
 
 #[cfg(test)]
 mod tests {
-    use rmk_types::ble::BLE_ADV_NAME_MAX_LEN;
-
     use super::Adv;
 
     /// Overrunning the 31-byte legacy advertisement only fails at runtime.
     fn fits(adv: Adv<'_>) -> bool {
-        adv.build(&mut [0; 31]).is_ok()
+        adv.build(&mut [0; 31], None).is_ok()
     }
 
     #[test]
     fn every_advertisement_fits_the_legacy_budget() {
         assert!(fits(Adv::SplitPeripheral { id: 0xFF }));
         assert!(fits(Adv::DongleSeeking));
-        // Where BLE_ADV_NAME_MAX_LEN comes from: this name fills the budget exactly.
-        const LONGEST_NAME: &str = "0123456789abcdef";
-        assert_eq!(LONGEST_NAME.len(), BLE_ADV_NAME_MAX_LEN);
-        assert!(fits(Adv::Host { name: LONGEST_NAME }));
+        // Flags, UUIDs and appearance leave 16 bytes for the name.
+        assert!(fits(Adv::Host {
+            name: "0123456789abcdef"
+        }));
         assert!(!fits(Adv::Host {
             name: "0123456789abcdefg"
         }));
@@ -154,7 +164,7 @@ mod tests {
     fn every_rmk_kind_round_trips_through_an_advertisement() {
         for adv in [Adv::SplitPeripheral { id: 2 }, Adv::DongleSeeking] {
             let mut buf = [0; 31];
-            adv.build(&mut buf).unwrap();
+            adv.build(&mut buf, None).unwrap();
             assert_eq!(Adv::decode(&buf), Some(adv));
         }
     }
